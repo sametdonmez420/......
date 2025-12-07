@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>...</title>
+    <style>
+        body { 
+            margin:0; 
+            overflow:hidden; 
+            background:#020205; 
+            font-family:'Segoe UI',sans-serif; 
+            touch-action:none;
+        }
+        canvas{ 
+            display:block; 
+            width:100%; 
+            height:100vh;
+        }
+        .info{
+            position:absolute; 
+            bottom:20px; 
+            left:20px; 
+            color:rgba(255,255,255,0.7); 
+            font-size:14px;
+        }
+        h1{
+            margin:0; 
+            font-size:1.2rem; 
+            text-shadow:0 0 10px rgba(0,240,255,0.5);
+        }
+    </style>
+</head>
+<body>
+
+
+
+<canvas id="sky"></canvas>
+
+<script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+
+let width,height,drones=[],targetPoints=[];
+const droneCount=2000;
+const flightDuration=180;
+
+function resize(){
+    const dpr = Math.min(window.devicePixelRatio, 2);
+    width=canvas.width=window.innerWidth*dpr;
+    height=canvas.height=window.innerHeight*dpr;
+    canvas.style.width=window.innerWidth+'px';
+    canvas.style.height=window.innerHeight+'px';
+    ctx.scale(dpr,dpr);
+    init();
+}
+window.addEventListener('resize',resize);
+
+/* ----------------
+ Ağaç hedef noktaları (Mavi ağırlıklı)
+-----------------*/
+function generateTreeTargets(x,y,len,angle,depth=0){
+    const endX=x+len*Math.cos(angle);
+    const endY=y+len*Math.sin(angle);
+
+    const steps=Math.floor(len/2.5);
+    for(let i=0;i<steps;i++){
+        let t=i/steps;
+        t = 0.5 - 0.5*Math.cos(Math.PI*t);
+
+        const px=x+(endX-x)*t + (Math.random()-0.5)*1.5;
+        const py=y+(endY-y)*t + (Math.random()-0.5)*1.5;
+
+        // Mavi renk paleti: Cyan'dan koyu maviye
+        const hue = 180 + Math.random() * 40; // 180(Cyan) - 220(Mavi)
+        const light = 50 + Math.random() * 50; // Parlaklık
+        
+        let color;
+        if (Math.random() > 0.95) {
+            color = '#ffffff'; // Beyaz ışıltılar
+        } else {
+            color = `hsl(${hue}, 100%, ${light}%)`;
+        }
+
+        targetPoints.push({
+            x:px,
+            y:py,
+            color:color,
+            radius:Math.random()*1.4 + 0.6
+        });
+    }
+
+    if(len>12 && depth<7){
+        generateTreeTargets(endX,endY,len*0.68,angle+0.38,depth+1);
+        generateTreeTargets(endX,endY,len*0.68,angle-0.38,depth+1);
+    }
+}
+
+/* ----------------
+ Drone sınıfı (Vortex animasyonu)
+-----------------*/
+class Drone{
+    constructor(target, delay){
+        const sw = window.innerWidth;
+        const sh = window.innerHeight;
+        
+        this.startX=sw/2;
+        this.startY=sh;
+
+        this.x=this.startX;
+        this.y=this.startY;
+
+        this.tx=target.x;
+        this.ty=target.y;
+        this.color=target.color;
+        this.radius=target.radius;
+
+        this.spiralDir=Math.random()>0.5?1:-1;
+        this.arrived=false;
+        this.delay=delay;
+    }
+
+    update(frame){
+        let t=Math.max(0,(frame-this.delay)/flightDuration);
+
+        if(t<1){
+            // Smoothstep easing
+            const ease=t*t*(3-2*t);
+            
+            const linearX=this.startX+(this.tx-this.startX)*ease;
+            const linearY=this.startY+(this.ty-this.startY)*ease;
+
+            // Spiral daralma (başta geniş, sonda dar)
+            const currentSpiralRadius=(1-ease)*300;
+            const angle=t*Math.PI*4*this.spiralDir; // 2 tam tur
+
+            this.x=linearX+Math.cos(angle)*currentSpiralRadius;
+            this.y=linearY+Math.sin(angle)*(currentSpiralRadius*0.35);
+        }else{
+            this.arrived=true;
+            // Rüzgar salınımı
+            const sway=Math.sin(Date.now()*0.0015 + this.x*0.01)*2;
+            this.x=this.tx+sway;
+            this.y=this.ty;
+        }
+    }
+
+    draw(){
+        ctx.globalCompositeOperation='lighter'; // Glow efekti
+        ctx.beginPath();
+        ctx.fillStyle=this.color;
+        ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation='source-over';
+    }
+}
+
+/* ----------------
+ Başlat
+-----------------*/
+function init(){
+    drones=[]; 
+    targetPoints=[];
+    
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    
+    // Ağaç boyutu (mobil uyumlu)
+    const treeHeight = screenHeight * 0.22;
+    generateTreeTargets(screenWidth/2, screenHeight-100, treeHeight, -Math.PI/2);
+
+    const total=Math.min(targetPoints.length,droneCount);
+
+    for(let i=0;i<total;i++){
+        const idx=Math.floor(Math.random()*targetPoints.length);
+        const target=targetPoints.splice(idx,1)[0];
+        const delay=Math.random()*80;
+        drones.push(new Drone(target, delay));
+    }
+}
+
+let frame=0;
+function animate(){
+    frame++;
+    
+    // Motion blur arka plan
+    ctx.fillStyle="rgba(2,2,5,0.4)";
+    ctx.fillRect(0,0,window.innerWidth,window.innerHeight);
+
+    for(const d of drones){
+        d.update(frame);
+        d.draw();
+    }
+
+    requestAnimationFrame(animate);
+}
+
+resize();
+animate();
+</script>
+
+</body>
+</html>
